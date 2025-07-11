@@ -69,7 +69,7 @@
 
     Przejdź do folderu roboczego BlueTrack
 
-    .venv/Scripts/activate
+    ./venv/Scripts/activate
     py client/client.py
 
 4. Uruchomienie Spark-a
@@ -77,5 +77,5 @@
     Przejdź do folderu roboczego BlueTrack
 
     ./config/set_env.ps1
-    .venv/Scripts/activate
+    ./venv/Scripts/activate
     py analysis/spark_processor.py
