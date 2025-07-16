@@ -1,8 +1,9 @@
 from kafka import KafkaConsumer, KafkaProducer
-import json
 from pymongo import MongoClient, errors
-
-
+import json
+import bcrypt
+import base64
+import uuid
 tmongo_client = MongoClient("mongodb://localhost:27017/")
 db = tmongo_client["user_db"]
 users = db["users"]
@@ -22,9 +23,9 @@ producer = KafkaProducer(
 
 
 consumer = KafkaConsumer(
-    'register_user', 'login_user',
+    'register_user', 'login_user', 'session_auth',
     bootstrap_servers='localhost:9092',
-    group_id='user-service',
+    group_id=f'user-service-{uuid.uuid4()}',
     auto_offset_reset='latest',
     enable_auto_commit=True,
     value_deserializer=lambda m: json.loads(m.decode('utf-8'))
@@ -55,7 +56,10 @@ for msg in consumer:
             print(f"[SERVER] {response['message']}")
         else:
             try:
-                users.insert_one({"username": username, "email": email, "password": password})
+                salt = bcrypt.gensalt()
+                hash_bytes = bcrypt.hashpw(password.encode('utf-8'), salt)
+                hashed_password = base64.b64encode(hash_bytes).decode('utf-8')
+                users.insert_one({"username": username, "email": email, "password": hashed_password})
             except errors.PyMongoError as e:
                 response["message"] = "Błąd bazy danych podczas rejestracji!"
                 print(f"[SERVER] Insert error: {e}")
@@ -72,18 +76,34 @@ for msg in consumer:
         identifier = data.get("username") 
         password = data.get("password")
         print(f"[SERVER] Login attempt: {identifier}")
-        response = {"success": False, "message": ""}
+        response = {"success": False, "message": "", "session_id": None}
 
        
         user = users.find_one({"$or": [{"username": identifier}, {"email": identifier}]})
-        if user and user.get("password") == password:
+        if user and bcrypt.checkpw(password.encode('utf-8'), base64.b64decode(user.get("password").encode('utf-8'))):
+            session_id = str(uuid.uuid4())
+            users.update_one({"_id": user["_id"]}, {"$set": {"session_id": session_id}})
             response["success"] = True
             response["message"] = "Zalogowano pomyślnie!"
+            response["session_id"] = session_id
             print(f"[SERVER] User '{user.get('username')}' login successful.")
         else:
             response["message"] = "Nieprawidłowa nazwa użytkownika/email lub hasło!"
             print(f"[SERVER] Login failed for '{identifier}'.")
-
-       
+            
         producer.send('login_user_response', response)
+        producer.flush()
+
+    elif topic == 'session_auth':
+        session_id = data.get("session_id")
+        user = users.find_one({"session_id": session_id})
+        response = {"success": False, "message": "", "session_id": session_id}
+        print(f"[SERVER] Session auth attempt for session ID: {session_id}")
+        if user:
+            response["success"] = True
+            response["message"] = "Sesja jest ważna."
+            response["session_id"] = session_id
+        else:
+            response["message"] = "Sesja wygasła lub jest nieprawidłowa."
+        producer.send('session_auth_response', response)
         producer.flush()
