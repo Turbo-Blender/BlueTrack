@@ -11,12 +11,12 @@ import json
 import sys
 import os
 import uuid
-import bcrypt
+
 # Switch mode:
 # 0 - login, 1 - register
 
 
-
+# Zookeeper is set to handle max 60 connections in config/zoo.cfg
 
 # Base project path
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,13 +33,13 @@ def resource_path(*parts):
 
 
 class BlueTrackUI(QWidget):
-    responseSignal = Signal(str, str, bool, str)  # topic, message, success, session_id
+    loginSignal = Signal(str, str, bool, str, str)  # topic, message, success, session_id
 
     def __init__(self):
         super().__init__()
         self.setObjectName("mainWindow")
         self.setWindowFlags(Qt.FramelessWindowHint)
-        self.setFixedSize(1500, 1000)
+        self.setFixedSize(1500, 800)
         self.setStyleSheet(
             "#mainWindow { background-color: #121212; }"
             "#mainWindow QLabel, #mainWindow QLineEdit, #mainWindow QPushButton { color: #FFFFFF; }"
@@ -63,7 +63,7 @@ class BlueTrackUI(QWidget):
             auto_offset_reset='latest',
             group_id=f'qt_client_{uuid.uuid4()}'
         )
-        self.responseSignal.connect(self._handle_response)
+        self.loginSignal.connect(self._handle_response)
         threading.Thread(target=self._consume_responses, daemon=True).start()
 
         # Drag support
@@ -128,10 +128,11 @@ class BlueTrackUI(QWidget):
             topic = msg.topic
             data = msg.value
             success = data.get('success', False)
+            user_id = data.get('user_id', None)
             text = data.get('message', '')
             session_id = data.get('session_id', None)
             print(f"[CLIENT] Received response from topic '{topic}': {text} (Success: {success})")
-            self.responseSignal.emit(topic, text, success, session_id)
+            self.loginSignal.emit(topic, text, success, session_id, user_id)
             
 
     def _create_login_page(self):
@@ -485,8 +486,8 @@ class BlueTrackUI(QWidget):
     def session_auth(self):
         self.producer.send('session_auth', {"session_id": self.session_id})
         self.producer.flush()
-    
-    def _handle_response(self, topic, text, success, session_id):
+
+    def _handle_response(self, topic, text, success, session_id, user_id):
         color = SUCCESS_COLOR if success else ERROR_COLOR
         if topic == 'register_user_response':
             self.register_feedback.setText(text)
@@ -496,6 +497,8 @@ class BlueTrackUI(QWidget):
             self.login_feedback.setText(text)
             self.login_feedback.setStyleSheet(f"color: {color};")
             self.session_id = session_id
+            self.user_id = user_id
+            print(f"[CLIENT] Login response: {self.user_id} (Success: {success})")
             success and self.switch_mode(2)
         elif topic == 'session_auth_response':
             self.session_id = session_id

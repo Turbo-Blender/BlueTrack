@@ -4,6 +4,7 @@ import json
 import bcrypt
 import base64
 import uuid
+
 tmongo_client = MongoClient("mongodb://localhost:27017/")
 db = tmongo_client["user_db"]
 users = db["users"]
@@ -76,7 +77,7 @@ for msg in consumer:
         identifier = data.get("username") 
         password = data.get("password")
         print(f"[SERVER] Login attempt: {identifier}")
-        response = {"success": False, "message": "", "session_id": None}
+        response = {"success": False, "message": "", "session_id": None, "user_id": None}
 
        
         user = users.find_one({"$or": [{"username": identifier}, {"email": identifier}]})
@@ -86,6 +87,7 @@ for msg in consumer:
             response["success"] = True
             response["message"] = "Zalogowano pomyślnie!"
             response["session_id"] = session_id
+            response["user_id"] = str(user.get("_id"))
             print(f"[SERVER] User '{user.get('username')}' login successful.")
         else:
             response["message"] = "Nieprawidłowa nazwa użytkownika/email lub hasło!"
