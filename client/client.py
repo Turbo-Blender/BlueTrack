@@ -1,11 +1,9 @@
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QLabel,
-    QLineEdit, QPushButton, QHBoxLayout,
-    QStackedWidget
-)
-from PySide6.QtGui import QPixmap, QFont, QIcon
-from PySide6.QtCore import Qt, QPoint, Signal
+from PySide6.QtWidgets import *
+from PySide6.QtGui import *
+from PySide6.QtCore import *
 from kafka import KafkaProducer, KafkaConsumer
+from widgets import BlueTrackTile
+from colors import *
 import threading
 import json
 import sys
@@ -22,10 +20,7 @@ import uuid
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Define colors
-PRIMARY_COLOR = "#0072ff"
-HOVER_COLOR   = "#2892ff"
-SUCCESS_COLOR = "#4caf50"  # zielony
-ERROR_COLOR   = "#f44336"  # czerwony
+
 
 
 def resource_path(*parts):
@@ -33,7 +28,9 @@ def resource_path(*parts):
 
 
 class BlueTrackUI(QWidget):
+    
     loginSignal = Signal(str, str, bool, str, str)  # topic, message, success, session_id
+    songsSignal = Signal(str, list)  # topic, login_random_tracks
 
     def __init__(self):
         super().__init__()
@@ -44,7 +41,8 @@ class BlueTrackUI(QWidget):
             "#mainWindow { background-color: #121212; }"
             "#mainWindow QLabel, #mainWindow QLineEdit, #mainWindow QPushButton { color: #FFFFFF; }"
         )
-
+        self.content = QWidget()
+        self.content_layout = QVBoxLayout()
         # Window icon
         icon_path = resource_path("img", "main_icon.png")
         if os.path.exists(icon_path):
@@ -56,16 +54,31 @@ class BlueTrackUI(QWidget):
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
         # Kafka consumer for both register and login responses
-        self.consumer = KafkaConsumer(
+        self.login_consumer = KafkaConsumer(
             'register_user_response', 'login_user_response', 'session_auth_response',
             bootstrap_servers='localhost:9092',
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='latest',
-            group_id=f'qt_client_{uuid.uuid4()}'
+            group_id='qt_client_login'
         )
-        self.loginSignal.connect(self._handle_response)
-        threading.Thread(target=self._consume_responses, daemon=True).start()
 
+        self.songs_consumer = KafkaConsumer(
+            'songs_response',
+            bootstrap_servers='localhost:9092',
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            auto_offset_reset='latest',
+            group_id='qt_client_songs'
+        )
+
+        self.loginSignal.connect(self._handle_login_response)
+        self.songsSignal.connect(self._handle_songs_response)
+
+        threading.Thread(target=self._consume_login_responses, daemon=True).start()
+        threading.Thread(target=self._consume_songs_responses, daemon=True).start()
+        print("[CLIENT] songs_consumer thread started")
+
+
+        
         # Drag support
         self.drag_pos = QPoint()
 
@@ -120,11 +133,12 @@ class BlueTrackUI(QWidget):
         body_layout.addWidget(self.stack)
         # Default to registration
         self.switch_mode(1)
-
         main_layout.addWidget(body)
-    def _consume_responses(self):
-        
-        for msg in self.consumer:
+        self.content.setLayout(self.content_layout)
+
+    def _consume_login_responses(self):
+
+        for msg in self.login_consumer:
             topic = msg.topic
             data = msg.value
             success = data.get('success', False)
@@ -133,8 +147,166 @@ class BlueTrackUI(QWidget):
             session_id = data.get('session_id', None)
             print(f"[CLIENT] Received response from topic '{topic}': {text} (Success: {success})")
             self.loginSignal.emit(topic, text, success, session_id, user_id)
-            
 
+    def _consume_songs_responses(self):
+        for msg in self.songs_consumer:
+            topic = msg.topic
+            songs_properties = msg.value
+            print(f"[CLIENT] Received songs response from topic '{topic}'")
+            self.songsSignal.emit(topic, songs_properties)
+
+    def _handle_login_response(self, topic, text, success, session_id, user_id):
+        color = SUCCESS_COLOR if success else ERROR_COLOR
+        if topic == 'register_user_response':
+            self.register_feedback.setText(text)
+            self.register_feedback.setStyleSheet(f"color: {color};")
+        elif topic == 'login_user_response':
+            self.session_correct = success
+            self.login_feedback.setText(text)
+            self.login_feedback.setStyleSheet(f"color: {color};")
+            self.session_id = session_id
+            self.user_id = user_id
+            print(f"[CLIENT] Login response: {self.user_id} (Success: {success})")
+            if success:
+                self.switch_mode(2)
+                self.producer.send('songs_update', {})
+                print(f"[CLIENT] Sending songs update request for user '{user_id}'")
+                self.producer.flush()
+
+        elif topic == 'session_auth_response':
+            self.session_id = session_id
+            if success:
+                self.session_correct = True
+            else:
+                self.session_correct = False
+
+    def _handle_songs_response(self, topic, songs_properties):
+        print("[CLIENT] _handle_songs_response triggered")
+        if topic == 'songs_response':
+            self.genres_tiles(songs_properties)
+    
+
+    def genres_tiles(self, songs_properties):
+        
+        outer_scroll_area = QScrollArea()
+        outer_scroll_area.setWidgetResizable(True)
+        outer_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        outer_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer_scroll_area.setStyleSheet("""
+            QScrollArea {
+                background-color: #121212;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #535353;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #888;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+
+        # Główne tło kontenera
+        main_container = QWidget()
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setSpacing(40)
+        main_layout.setContentsMargins(30, 30, 30, 30)
+        main_container.setStyleSheet("background-color: #121212;")
+
+        outer_scroll_area.setWidget(main_container)
+
+        self.login_random_tracks = songs_properties[0]
+        self.genres_names = songs_properties[1]
+        tiles = {}
+
+        for genre, tracks in self.login_random_tracks.items():
+            list_of_tiles = []
+            for i in range(10):
+                track_name = tracks["track_names"][i]
+                artist = tracks["artists"][i]
+                message = artist + " - " + track_name
+                tile = BlueTrackTile(message)
+                tile.setFixedSize(200, 250)  # pełny rozmiar kafelka
+                list_of_tiles.append(tile)
+            tiles[genre] = list_of_tiles
+
+        for genre, genre_tiles in tiles.items():
+            section_widget = QWidget()
+            section_layout = QVBoxLayout(section_widget)
+            section_layout.setSpacing(10)
+            section_layout.setContentsMargins(0, 0, 0, 0)
+
+            # Label z nazwą gatunku
+            genre_label = QLabel(genre)
+            genre_label.setStyleSheet("""
+                QLabel {
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: #FFFFFF;
+                    padding-left: 5px;
+                }
+            """)
+            section_layout.addWidget(genre_label)
+
+            # Scroll Area
+            tracks_area = QScrollArea()
+            tracks_area.setWidgetResizable(True)
+            tracks_area.setFixedHeight(250)
+            tracks_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            tracks_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            tracks_area.setStyleSheet("""
+                QScrollArea {
+                    border: none;
+                }
+                QScrollBar:horizontal {
+                    background: transparent;
+                    height: 8px;
+                    margin: 0px 20px 0px 20px;
+                }
+                QScrollBar::handle:horizontal {
+                    background: #535353;
+                    border-radius: 4px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background: #888;
+                }
+                QScrollBar::add-line:horizontal,
+                QScrollBar::sub-line:horizontal {
+                    width: 0px;
+                }
+            """)
+
+            # Kontener na kafelki
+            inner_container = QWidget()
+            inner_container.setFixedHeight(250)
+            inner_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+
+            inner_layout = QHBoxLayout(inner_container)
+            inner_layout.setSpacing(12)
+            inner_layout.setContentsMargins(10, 10, 10, 10)
+
+            for tile in genre_tiles:
+                inner_layout.addWidget(tile)
+
+            tracks_area.setWidget(inner_container)
+            section_layout.addWidget(tracks_area)
+
+            # Dodaj do głównego layoutu
+            main_layout.addWidget(section_widget)
+
+        self.content_layout.addWidget(outer_scroll_area)
+
+        
+        
     def _create_login_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -341,6 +513,8 @@ class BlueTrackUI(QWidget):
         page = QWidget()
         # Główne tło w stylu Spotify
         page.setStyleSheet("background-color: #121212;")
+
+
         outer_layout = QVBoxLayout(page)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
@@ -364,19 +538,23 @@ class BlueTrackUI(QWidget):
         # TODO: Dodaj widgety playlist
         middle_layout.addWidget(sidebar)
 
-        # Główna przestrzeń treści
-        content = QWidget()
-        content.setStyleSheet(
+
+
+        self.content = QWidget()
+        
+        self.content.setStyleSheet(
             "background-color: #121212;"
             "border-left: 2px solid #383838;"
             "border-right: 2px solid #383838;"
         )
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(24, 24, 24, 24)
-        content_layout.setSpacing(24)
+    
+        self.content_layout = QHBoxLayout(self.content)
+        self.content_layout.setContentsMargins(24, 24, 24, 24)
+        self.content_layout.setSpacing(24)
+        
+        
         # TODO: Dodaj siatkę albumów/utworów
-        middle_layout.addWidget(content, 1)
-
+        middle_layout.addWidget(self.content)    
         # Prawy panel szczegółów/kolejki
         details = QWidget()
         details.setFixedWidth(280)
@@ -424,7 +602,7 @@ class BlueTrackUI(QWidget):
         controls_layout.setContentsMargins(24, 12, 24, 12)
         controls_layout.setSpacing(32)
         # TODO: Dodaj przyciski play/pause, prev/next, suwaki (użyj PRIMARY_COLOR jako accent)
-        middle_layout.setStretchFactor(content, 1)
+        middle_layout.setStretchFactor(self.content, 1)
         outer_layout.addWidget(controls)
         btn_logout.clicked.connect(self.logout_user)
         btn_settings.clicked.connect(self._create_settings_page)
@@ -486,26 +664,6 @@ class BlueTrackUI(QWidget):
     def session_auth(self):
         self.producer.send('session_auth', {"session_id": self.session_id})
         self.producer.flush()
-
-    def _handle_response(self, topic, text, success, session_id, user_id):
-        color = SUCCESS_COLOR if success else ERROR_COLOR
-        if topic == 'register_user_response':
-            self.register_feedback.setText(text)
-            self.register_feedback.setStyleSheet(f"color: {color};")
-        elif topic == 'login_user_response':
-            self.session_correct = success
-            self.login_feedback.setText(text)
-            self.login_feedback.setStyleSheet(f"color: {color};")
-            self.session_id = session_id
-            self.user_id = user_id
-            print(f"[CLIENT] Login response: {self.user_id} (Success: {success})")
-            success and self.switch_mode(2)
-        elif topic == 'session_auth_response':
-            self.session_id = session_id
-            if success:
-                self.session_correct = True
-            else:
-                self.session_correct = False
 
     def _styled_input(self, w):
         w.setFixedHeight(40)
