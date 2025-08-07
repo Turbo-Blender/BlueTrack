@@ -8,8 +8,10 @@ import threading
 import json
 import sys
 import os
+from datetime import datetime, timezone
 import uuid
 
+### start_time = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z") - do obsługi timestamp w pyspark
 # Switch mode:
 # 0 - login, 1 - register
 
@@ -187,7 +189,6 @@ class BlueTrackUI(QWidget):
     
 
     def genres_tiles(self, songs_properties):
-        
         outer_scroll_area = QScrollArea()
         outer_scroll_area.setWidgetResizable(True)
         outer_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -200,7 +201,6 @@ class BlueTrackUI(QWidget):
             QScrollBar:vertical {
                 background: transparent;
                 width: 10px;
-                margin: 0px 0px 0px 0px;
             }
             QScrollBar::handle:vertical {
                 background: #535353;
@@ -215,7 +215,6 @@ class BlueTrackUI(QWidget):
             }
         """)
 
-        # Główne tło kontenera
         main_container = QWidget()
         main_layout = QVBoxLayout(main_container)
         main_layout.setSpacing(40)
@@ -235,8 +234,11 @@ class BlueTrackUI(QWidget):
                 artist = tracks["artists"][i]
                 message = artist + " - " + track_name
                 tile = BlueTrackTile(message)
-                tile.setFixedSize(200, 250)  # pełny rozmiar kafelka
+                tile.setFixedSize(200, 250)
+                tile.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 list_of_tiles.append(tile)
+
+
             tiles[genre] = list_of_tiles
 
         for genre, genre_tiles in tiles.items():
@@ -245,7 +247,6 @@ class BlueTrackUI(QWidget):
             section_layout.setSpacing(10)
             section_layout.setContentsMargins(0, 0, 0, 0)
 
-            # Label z nazwą gatunku
             genre_label = QLabel(genre)
             genre_label.setStyleSheet("""
                 QLabel {
@@ -257,15 +258,15 @@ class BlueTrackUI(QWidget):
             """)
             section_layout.addWidget(genre_label)
 
-            # Scroll Area
             tracks_area = QScrollArea()
-            tracks_area.setWidgetResizable(True)
-            tracks_area.setFixedHeight(250)
+            tracks_area.setWidgetResizable(False)
+            tracks_area.setFixedHeight(270)  # wysokość kafelków
             tracks_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
             tracks_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             tracks_area.setStyleSheet("""
                 QScrollArea {
                     border: none;
+                    background-color: transparent;
                 }
                 QScrollBar:horizontal {
                     background: transparent;
@@ -285,27 +286,35 @@ class BlueTrackUI(QWidget):
                 }
             """)
 
-            # Kontener na kafelki
+            # Sztywne wymiary kontenera kafelków
+            tile_width = 200
+            tile_height = 250
+            tile_spacing = 12
+            horizontal_margins = 40
+            vertical_margins = 20
+            total_width = len(genre_tiles) * tile_width + (len(genre_tiles) - 1) * tile_spacing + horizontal_margins
+            total_height = tile_height + vertical_margins
+
             inner_container = QWidget()
-            inner_container.setFixedHeight(250)
-            inner_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+            inner_container.setFixedSize(total_width, total_height)
+            inner_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
             inner_layout = QHBoxLayout(inner_container)
-            inner_layout.setSpacing(12)
+            inner_layout.setSpacing(tile_spacing)
             inner_layout.setContentsMargins(10, 10, 10, 10)
 
             for tile in genre_tiles:
+                tile.setFixedSize(tile_width, tile_height)
+                tile.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 inner_layout.addWidget(tile)
 
             tracks_area.setWidget(inner_container)
             section_layout.addWidget(tracks_area)
-
-            # Dodaj do głównego layoutu
             main_layout.addWidget(section_widget)
 
         self.content_layout.addWidget(outer_scroll_area)
 
-        
+
         
     def _create_login_page(self):
         page = QWidget()

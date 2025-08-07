@@ -24,11 +24,13 @@ if not songs.find_one():
         track_names = []
         artists = []
         genres = []
+        track_duration = []
         for row in reader:
             tracks_id.append(row["track_id"])
             track_names.append(row["track_name"])
             artists.append(row["artists"])
             genres.append(row["track_genre"])
+            track_duration.append(row["duration_ms"])
 
     tracks = []
     for i in range(len(tracks_id)):
@@ -36,7 +38,8 @@ if not songs.find_one():
             "track_id": tracks_id[i],
             "track_name": track_names[i],
             "artist": artists[i],
-            "genre": genres[i]
+            "genre": genres[i],
+            "duration_ms": track_duration[i]
         })
 
     songs.insert_many(tracks)
