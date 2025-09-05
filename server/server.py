@@ -10,10 +10,14 @@ import random
 
 # https://www.kaggle.com/datasets/maharshipandya/-spotify-tracks-dataset?resource=download - spotify dataset
 
-tmongo_client = MongoClient("mongodb://localhost:27017/")
-user_db = tmongo_client["database"]
-users = user_db["users"]
-songs = user_db["songs"]
+try:
+    mongo_client = MongoClient("mongodb://mongodb:27017/")
+    user_db = mongo_client["database"]
+    users = user_db["users"]
+    songs = user_db["songs"]
+except errors.ConnectionFailure as e:
+    print("Problem z połączeniem z bazą MongoDB:", e)
+    exit(1)
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Path to the main directory
 
@@ -50,16 +54,17 @@ try:
 except errors.DuplicateKeyError:
     print("[SERVER] Warning: nie można utworzyć unikalnych indeksów z powodu istniejących duplikatów.")
 
-
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
+try:
+    producer = KafkaProducer(
+        bootstrap_servers='kafka:9092',
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
+except Exception as e:
+    print("Problem z połączeniem z brokerem Kafka:", e)
 
 consumer = KafkaConsumer(
     'register_user', 'login_user', 'session_auth','songs_update',
-    bootstrap_servers='localhost:9092',
+    bootstrap_servers='kafka:9092',
     group_id='user-service',
     auto_offset_reset='latest',
     enable_auto_commit=True,

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+*.env
+.venv/
+venv/
+.git/
+.gitignore
+dockerfile
+compose.yaml
+.DS_Store
+Thumbs.db
+config

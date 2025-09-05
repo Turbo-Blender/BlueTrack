@@ -52,13 +52,13 @@ class BlueTrackUI(QWidget):
 
         # Kafka producer
         self.producer = KafkaProducer(
-            bootstrap_servers='localhost:9092',
+            bootstrap_servers='kafka:9092',
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
         # Kafka consumer for both register and login responses
         self.login_consumer = KafkaConsumer(
             'register_user_response', 'login_user_response', 'session_auth_response',
-            bootstrap_servers='localhost:9092',
+            bootstrap_servers='kafka:9092',
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='latest',
             group_id='qt_client_login'
