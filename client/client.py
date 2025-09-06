@@ -11,7 +11,6 @@ import os
 from datetime import datetime, timezone
 import uuid
 
-### start_time = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z") - do obsługi timestamp w pyspark
 # Switch mode:
 # 0 - login, 1 - register
 
@@ -225,7 +224,7 @@ class BlueTrackUI(QWidget):
 
         self.login_random_tracks = songs_properties[0]
         self.genres_names = songs_properties[1]
-        tiles = {}
+        self.tiles = {}
 
         for genre, tracks in self.login_random_tracks.items():
             list_of_tiles = []
@@ -239,9 +238,9 @@ class BlueTrackUI(QWidget):
                 list_of_tiles.append(tile)
 
 
-            tiles[genre] = list_of_tiles
+            self.tiles[genre] = list_of_tiles
 
-        for genre, genre_tiles in tiles.items():
+        for genre, genre_tiles in self.tiles.items():
             section_widget = QWidget()
             section_layout = QVBoxLayout(section_widget)
             section_layout.setSpacing(10)
@@ -260,7 +259,7 @@ class BlueTrackUI(QWidget):
 
             tracks_area = QScrollArea()
             tracks_area.setWidgetResizable(False)
-            tracks_area.setFixedHeight(270)  # wysokość kafelków
+            tracks_area.setFixedHeight(270)
             tracks_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
             tracks_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             tracks_area.setStyleSheet("""
@@ -311,9 +310,9 @@ class BlueTrackUI(QWidget):
             tracks_area.setWidget(inner_container)
             section_layout.addWidget(tracks_area)
             main_layout.addWidget(section_widget)
+        
 
         self.content_layout.addWidget(outer_scroll_area)
-
 
         
     def _create_login_page(self):
@@ -595,12 +594,66 @@ class BlueTrackUI(QWidget):
             )
             details_layout.addWidget(btn)
 
-        # TODO: Dodaj szczegóły utworu i kolejkę
         middle_layout.addWidget(details)
 
         outer_layout.addWidget(middle)
 
         # Dolne sterowanie odtwarzaczem
+        
+
+        stop_button = QPushButton()
+        start_button = QPushButton()
+        next_button = QPushButton()
+        previous_button = QPushButton()
+
+        icon_size = QSize(30, 30)
+
+        for btn, img in [
+            (stop_button, "stop_button.png"),
+            (start_button, "start_button.png"),
+            (next_button, "next_button.png"),
+            (previous_button, "previous_button.png"),
+        ]:
+            path = resource_path("img", img)
+            btn.setIcon(QIcon(path))
+            btn.setIconSize(icon_size)
+            btn.setFixedSize(icon_size + QSize(12, 12))
+
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #2E2E2E;
+                    border: 2px solid #565656;
+                    border-radius: 10px;
+                }}
+                QPushButton:hover {{
+                    border-color: {PRIMARY_COLOR};
+                }}
+            """)
+
+        stop_container = QWidget()
+        stop_container.setStyleSheet("background: transparent; border: none;")
+        stop_layout = QHBoxLayout(stop_container)
+        stop_layout.setContentsMargins(0, 0, 0, 0)
+        stop_layout.setSpacing(0)
+        stop_layout.addWidget(stop_button, alignment=Qt.AlignCenter)
+
+        start_container = QWidget()
+        start_container.setStyleSheet("background: transparent; border: none;")
+        start_layout = QHBoxLayout(start_container)
+        start_layout.setContentsMargins(0, 0, 0, 0)
+        start_layout.setSpacing(0)
+        start_layout.addWidget(start_button, alignment=Qt.AlignCenter)
+
+        self.play_stack = QStackedWidget()
+        self.play_stack.setFrameShape(QFrame.NoFrame)
+        self.play_stack.setStyleSheet("background: transparent; border: none;")
+        self.play_stack.addWidget(stop_container)
+        self.play_stack.addWidget(start_container)
+        self.play_stack.setCurrentIndex(1)
+
+        stack_size = stop_button.size()
+        self.play_stack.setFixedSize(stack_size)
+
         controls = QWidget()
         controls.setFixedHeight(96)
         controls.setStyleSheet(
@@ -608,11 +661,50 @@ class BlueTrackUI(QWidget):
             "border-top: 2px solid #383838;"
         )
         controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(24, 12, 24, 12)
-        controls_layout.setSpacing(32)
-        # TODO: Dodaj przyciski play/pause, prev/next, suwaki (użyj PRIMARY_COLOR jako accent)
-        middle_layout.setStretchFactor(self.content, 1)
+        controls_layout.setContentsMargins(24, 0, 24, 0)
+        controls_layout.setSpacing(0)
+
+        # LEWA CZĘŚĆ - placeholder (przezroczysty, rezerwacja miejsca)
+        left = QWidget()
+        left.setStyleSheet("background: transparent;")
+        left_layout = QHBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left.setMinimumWidth(200)  # zarezerwowane miejsce po lewej
+
+        # ŚRODEK - przyciski (wycentrowane)
+        center = QWidget()
+        center.setStyleSheet("background: transparent;")
+        center_layout = QHBoxLayout(center)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(8)  # małe odstępy między ikonami
+
+        # Dodajemy przyciski do centrum; wyrównujemy pionowo do środka
+        center_layout.addWidget(previous_button, alignment=Qt.AlignVCenter)
+        center_layout.addWidget(self.play_stack, alignment=Qt.AlignVCenter)
+        center_layout.addWidget(next_button, alignment=Qt.AlignVCenter)
+        center_layout.setAlignment(Qt.AlignCenter)
+
+        # PRAWA CZĘŚĆ - placeholder (przezroczysty, rezerwacja miejsca)
+        right = QWidget()
+        right.setStyleSheet("background: transparent;")
+        right_layout = QHBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        right.setMinimumWidth(200)
+
+        controls_layout.addWidget(left, 1, Qt.AlignVCenter | Qt.AlignLeft)
+        controls_layout.addWidget(center, 0, Qt.AlignCenter)
+        controls_layout.addWidget(right, 1, Qt.AlignVCenter | Qt.AlignRight)
+
         outer_layout.addWidget(controls)
+
+        stop_button.clicked.connect(lambda v: self.play_track(1))
+        start_button.clicked.connect(lambda v: self.stop_track(0))
+        #next_button.clicked.connect()
+        #previous_button.clicked.connect()
+
+        
         btn_logout.clicked.connect(self.logout_user)
         btn_settings.clicked.connect(self._create_settings_page)
 
@@ -621,7 +713,6 @@ class BlueTrackUI(QWidget):
 
 
     def switch_mode(self, idx):
-        # Clear all inputs and feedback labels
         for widget in [getattr(self, 'username_input', None), getattr(self, 'email_input', None), getattr(self, 'password_input', None),
                        getattr(self, 'login_username', None), getattr(self, 'login_password', None)]:
             if widget:
@@ -629,7 +720,6 @@ class BlueTrackUI(QWidget):
         for label in [getattr(self, 'register_feedback', None), getattr(self, 'login_feedback', None)]:
             if label:
                 label.clear()
-        # Switch the page
         self.stack.setCurrentIndex(idx)
 
     def register_user(self):
@@ -657,6 +747,24 @@ class BlueTrackUI(QWidget):
         self.producer.send('login_user', {"username": u, "password": p})
         self.producer.flush()
 
+    def play_track(self, idx):
+        
+        self.play_stack.setCurrentIndex(idx)
+        pass
+    
+
+    def stop_track(self, idx):
+
+        self.play_stack.setCurrentIndex(idx)
+        pass
+    
+    def next_track(self, idx):
+        
+        pass
+
+    def previous_track(self, idx):
+        
+        pass
     def logout_user(self):
         self.session_auth()
         if self.session_correct:

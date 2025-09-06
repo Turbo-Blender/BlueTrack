@@ -1,42 +1,54 @@
+import os
+import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.types import *
 from pyspark.sql.functions import from_json, col, to_timestamp, expr
-from pyspark.sql.streaming import GroupState, GroupStateTimeout
-from datetime import datetime, timezone
+from pyspark.sql.streaming.state import GroupState, GroupStateTimeout
 
 
-def update_user_state(user_id, events_iterator, state: GroupState):
-    now = datetime.now(timezone.utc)
+def update_active_tracks(key, events_iterator, state: GroupState):
 
-    current_state = state.get() if state.exists else None
+    now = pd.Timestamp.now(tz='UTC')
 
-    for event in events_iterator:
-        new_end = event.end_ts
-        if new_end > now:
-            state.update(event)
-            return [event]
-        else:
-            state.remove()
-            return []
+    # Jeśli jest stan, odczytaj go
+    if state.exists:
+        state_df = state.get()
+    else:
+        state_df = pd.DataFrame(columns=events_iterator.columns)
 
-    if current_state and current_state.end_ts > now:
-        return [current_state]
+    # Złącz z nowymi eventami
+    new_events = pd.concat(list(events_iterator))
+
+    # Połącz stare + nowe eventy, zachowując tylko te z end_ts > now
+    all_events = pd.concat([state_df, new_events])
+    all_events["end_ts"] = pd.to_datetime(all_events["end_ts"])
+    active_events = all_events[all_events["end_ts"] > now]
+
+    # Aktualizuj stan
+    if not active_events.empty:
+        state.update(active_events)
     else:
         state.remove()
-        return []
-    
-    
-    
+
+    return active_events
 
 schema = StructType([
     StructField("user_id", StringType()),
     StructField("track_id", StringType()),
     StructField("operation_type", StringType()),
-    StructField("start_time", StringType()),
+    StructField("start_time", TimestampType()),
     StructField("duration_ms", IntegerType()),
     StructField("genre", StringType())
     ])
 
+schema_IO = StructType([
+    StructField("user_id", StringType()),
+    StructField("track_id", StringType()),
+    StructField("operation_type", StringType()),
+    StructField("end_ts", TimestampType()),
+    StructField("duration_ms", IntegerType()),
+    StructField("genre", StringType())
+    ])
 
 spark = SparkSession.builder \
     .appName("KafkaSparkStreaming") \
@@ -72,28 +84,29 @@ df_parsed = df.withColumn(
     expr("CAST((CAST(start_time AS DOUBLE) + duration_s) AS TIMESTAMP)")
 )
 
-user_grouped = df.groupByKey(lambda row: row.user_id)
 
-stream_with_active_tracks = user_grouped \
-    .mapGroupsWithState(
-        update_user_state,
+stream_with_active_tracks = df_parsed.groupBy("user_id") \
+    .applyInPandasWithState(
+        update_active_tracks,
+        outputStructType=schema_IO,
+        stateStructType=schema_IO,
         outputMode="update",
-        stateTimeoutConf=GroupStateTimeout.NoTimeout()
+        timeoutConf="NoTimeout"
     )
 
 
 
-active_tracks_stream = stream_with_active_tracks.flatMap(lambda tracks: tracks)
+active_tracks_stream_with_watermark = stream_with_active_tracks.withWatermark("end_ts", "20 minutes")
 
-
-genre_counts = active_tracks_stream.groupBy("genre").count()
-
+# Następnie agregacja z watermarkiem
+genre_counts = active_tracks_stream_with_watermark.groupBy("genre").count()
 
 top5_genres = genre_counts.orderBy(col("count").desc()).limit(5)
 
 top5_genres.writeStream \
-    .format("mongo") \
+    .format("mongodb") \
     .option("checkpointLocation", "/tmp/checkpoints/mongo_genres") \
     .outputMode("complete") \
+    .trigger(processingTime='5 seconds') \
     .start() \
     .awaitTermination()

@@ -3,6 +3,27 @@ from PySide6.QtGui import *
 from PySide6.QtCore import *
 from colors import *
 
+def wrap_text(text, max_chars=20):
+    """
+    Dzieli tekst na linie co max_chars znaków.
+    Działa najlepiej przy spacji między słowami.
+    """
+    words = text.split(' ')
+    lines = []
+    current_line = ''
+    for word in words:
+        if len(current_line + ' ' + word) <= max_chars:
+            if current_line:
+                current_line += ' ' + word
+            else:
+                current_line = word
+        else:
+            lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+    return '\n'.join(lines)
+
 class BlueTrackTile(QWidget):
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
@@ -20,17 +41,18 @@ class BlueTrackTile(QWidget):
         self.color_frame.setFixedSize(200, 200)
         self.color_frame.setAutoFillBackground(True)
 
-        # etykieta tytułu
-        self.label = QLabel(title, self)
-        self.label.setObjectName("BlueTrackTileLabel")
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setWordWrap(True)
-        self.label.setFixedHeight(50)
+        # przycisk
+        wrapped_title = wrap_text(title, max_chars=20)
+        self.button = QPushButton(wrapped_title, self)
+        self.button.setObjectName("BlueTrackTileButton")
+        self.button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.button.setMinimumHeight(0)
+        self.button.setMaximumHeight(16777215)
 
         layout.addWidget(self.color_frame)
-        layout.addWidget(self.label)
-        
-        # Styl z wykorzystaniem globalnych kolorów
+        layout.addWidget(self.button)
+
+        # style
         self.setStyleSheet(f"""
         QWidget#BlueTrackTile {{
             background-color: #282828;
@@ -41,10 +63,16 @@ class BlueTrackTile(QWidget):
             border-top-left-radius: 8px;
             border-top-right-radius: 8px;
         }}
-        QLabel#BlueTrackTileLabel {{
+        QPushButton#BlueTrackTileButton {{
             color: #FFFFFF;
             padding: 8px;
             font-size: 14px;
+            background: transparent;
+            border: none;
+            text-align: center;
+        }}
+        QPushButton#BlueTrackTileButton:hover {{
+            color: {PRIMARY_COLOR};
         }}
         QWidget#BlueTrackTile:hover QWidget#BlueTrackTileColor {{
             background-color: {color.replace('#', '#80')};

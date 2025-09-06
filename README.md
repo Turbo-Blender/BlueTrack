@@ -22,7 +22,7 @@ Instalator lub instrukcja instalacji dla większej ilości wersji i innych syste
     Pobrać Zookeeper-a (https://zookeeper.apache.org/releases.html Latest Stable Version - wersja 3.8.4)
 
     Do folderu C:\zookeeper (jeżeli nie istnieje to stworzyć) skopiować zawartość apache-zookeeper-3.8.4-bin.tar.gz
-    Powino wyglądać to tak C:\kafka\apache-zookeeper-3.8.4-bin
+    Powino wyglądać to tak C:\zookeeper\apache-zookeeper-3.8.4-bin
 
     Następnie zmienić nazwę folderu z apache-zookeeper-3.8.4-bin na zookeeper-3.8.4 (finalny wynik - C:\zookeeper\zookeeper-3.8.4)
 
@@ -40,8 +40,8 @@ Instalator lub instrukcja instalacji dla większej ilości wersji i innych syste
 
 5. Pobieranie Spark oraz konfiguracja
 
-    https://spark.apache.org/downloads.html - wybrać wersję 3.4.4 i typ pakietu "Pre-built for Apache Hadoop 3.4 and later"
-    w folderze C:\spark (jeżeli nie istnieje to stworzyć) skopiować zawartość spark-4.0.0-bin-hadoop3.tgz , powino wyglądać to tak C:\spark\spark-3.4.4-bin-hadoop3
+    https://apache.root.lu/spark/spark-3.4.0 - wybrać wersję 3.4.0
+    w folderze C:\spark (jeżeli nie istnieje to stworzyć) skopiować zawartość spark-3.4.0-bin-hadoop3.tgz , powino wyglądać to tak C:\spark\spark-3.4.0-bin-hadoop3
 
 6. Pobranie Hadoop
 

@@ -6,7 +6,7 @@ $env:ZOOKEEPER_HOME = $scriptDir
 
 # 2) Upewnij się, że wskazujesz poprawne JAVA_HOME
 #    (albo usuń tę linię, jeśli masz już JAVA_HOME w env)
-$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-11.0.27.6-hotspot"
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-11.0.28.6-hotspot"
 
 Write-Host "ZOOKEEPER_HOME -> $env:ZOOKEEPER_HOME"
 Write-Host "JAVA_HOME      -> $env:JAVA_HOME"
