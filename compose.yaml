@@ -1,0 +1,147 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: bluetrack_zookeeper_simple
+    hostname: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_LOG4J_ROOT_LOGLEVEL: WARN
+      ZOOKEEPER_TOOLS_LOG4J_LOGLEVEL: ERROR
+    volumes:
+      - zk_data:/var/lib/zookeeper/data
+      - zk_logs:/var/lib/zookeeper/log
+    networks:
+      - bluetrack_network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: bluetrack_kafka_simple
+    hostname: kafka
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,OUTSIDE://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+      KAFKA_TOOLS_LOG4J_LOGLEVEL: ERROR
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - bluetrack_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mongodb:
+    image: mongo:8.0.11
+    container_name: bluetrack_mongodb_simple
+    hostname: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: bluetrack
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - bluetrack_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  spark:
+    image: bitnami/spark:3.5.1
+    container_name: bluetrack_spark_simple
+    hostname: spark
+    ports:
+      - "4040:4040"
+      - "7077:7077"
+      - "8080:8080"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark
+      - SPARK_MASTER_PORT_NUMBER=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+      - SPARK_WORKER_WEBUI_PORT=8081
+    volumes:
+      - ./:/app
+      - spark_logs:/opt/bitnami/spark/logs
+    networks:
+      - bluetrack_network
+    restart: unless-stopped
+
+  python_app:
+    build: .
+    container_name: bluetrack_python_simple
+    hostname: pythonapp
+    ports:
+      - "8000:8000"
+      - "5000:5000"
+    depends_on:
+      - kafka
+      - mongodb
+      - spark
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/bluetrack?authSource=admin
+      - SPARK_MASTER_URL=spark://spark:7077
+    volumes:
+      - ./:/app
+    working_dir: /app
+    networks:
+      - bluetrack_network
+    restart: unless-stopped
+
+  kafka_ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: bluetrack_kafka_ui
+    ports:
+      - "8090:8080"
+    depends_on:
+      - kafka
+      - zookeeper
+    environment:
+      KAFKA_CLUSTERS_0_NAME: bluetrack
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - bluetrack_network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  kafka_data:
+  zk_data:
+  zk_logs:
+  spark_logs:
+
+networks:
+  bluetrack_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
