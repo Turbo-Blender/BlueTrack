@@ -10,7 +10,7 @@ import sys
 import os
 from datetime import datetime, timezone
 import uuid
-
+from functools import partial
 # Switch mode:
 # 0 - login, 1 - register
 
@@ -51,20 +51,20 @@ class BlueTrackUI(QWidget):
 
         # Kafka producer
         self.producer = KafkaProducer(
-            bootstrap_servers='kafka:9092',
+            bootstrap_servers='localhost:9092',
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
         # Kafka consumer for both register and login responses
         self.login_consumer = KafkaConsumer(
             'register_user_response', 'login_user_response', 'session_auth_response',
-            bootstrap_servers='kafka:9092',
+            bootstrap_servers='localhost:9092',
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='latest',
             group_id='qt_client_login'
         )
 
         self.songs_consumer = KafkaConsumer(
-            'songs_response',
+            'songs_response','top_genres',
             bootstrap_servers='localhost:9092',
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='latest',
@@ -78,16 +78,30 @@ class BlueTrackUI(QWidget):
         threading.Thread(target=self._consume_songs_responses, daemon=True).start()
         print("[CLIENT] songs_consumer thread started")
 
-
-        
+        #Tile and song control
+        self.tiles = {}
+        self.active_song = {}
+        self.paused = True
+        self.playing = False
+        self.song_duration = 0
+        self.time_left = 0
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_time)
+        self.song_index = None
+        self.last_index = None
         # Drag support
         self.drag_pos = QPoint()
+        
+        #PySpark top 5 genres
+
+        self.top5_genres = None
+
 
         # Main layout
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-
+        
         # Title bar
         title_bar = QWidget(self)
         title_bar.setFixedHeight(40)
@@ -108,6 +122,7 @@ class BlueTrackUI(QWidget):
         title_lbl.setStyleSheet(f"color: {PRIMARY_COLOR};")
         title_layout.addWidget(title_lbl)
         title_layout.addStretch()
+
         # Minimize & close buttons
         for sym, slot, hov in [("–", self.showMinimized, HOVER_COLOR), ("×", self.close, '#FF5C5C')]:
             btn = QPushButton(sym, self)
@@ -185,8 +200,49 @@ class BlueTrackUI(QWidget):
         print("[CLIENT] _handle_songs_response triggered")
         if topic == 'songs_response':
             self.genres_tiles(songs_properties)
-    
+        elif topic == 'top_genres':
+            
+            self.top5_genres = songs_properties
+            print("\n", self.top5_genres)
+            self.update_top5_genres_sidebar()
 
+    
+    def update_top5_genres_sidebar(self):
+    
+        if not hasattr(self, "sidebar"):
+            return
+
+        # Usuń stare widgety
+        for i in reversed(range(self.sidebar_layout.count())):
+            widget = self.sidebar_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+
+        if not self.top5_genres:
+            return
+
+        # Nagłówek
+        header = QLabel("Top Gatunki")
+        header.setFont(QFont("Arial", 14, QFont.Bold))
+        header.setStyleSheet("color: #FFFFFF; padding: 8px;")
+        self.sidebar_layout.addWidget(header)
+
+    
+        for genre_info in self.top5_genres[:5]:
+            genre = genre_info["genre"]
+            count = genre_info["count"]
+            btn = QLabel(f"{genre} ({count})")
+            btn.setStyleSheet(
+                "QLabel {"
+                "  background: #282828;"
+                "  color: #FFFFFF;"
+                "  padding: 6px 8px;"
+                "  border-radius: 6px;"
+                "}"
+            )
+            self.sidebar_layout.addWidget(btn)
+
+        self.sidebar_layout.addStretch()
     def genres_tiles(self, songs_properties):
         outer_scroll_area = QScrollArea()
         outer_scroll_area.setWidgetResizable(True)
@@ -231,12 +287,14 @@ class BlueTrackUI(QWidget):
             for i in range(10):
                 track_name = tracks["track_names"][i]
                 artist = tracks["artists"][i]
+                track_id = tracks["tracks_id"][i]
+                duration_ms = tracks["duration_ms"][i]
                 message = artist + " - " + track_name
-                tile = BlueTrackTile(message)
+                tile = BlueTrackTile(message, track_id, genre, duration_ms)
                 tile.setFixedSize(200, 250)
                 tile.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 list_of_tiles.append(tile)
-
+                tile.tile_button.clicked.connect(partial(self.handle_tile_click, tile))
 
             self.tiles[genre] = list_of_tiles
 
@@ -533,19 +591,16 @@ class BlueTrackUI(QWidget):
         middle_layout.setContentsMargins(0, 0, 0, 0)
         middle_layout.setSpacing(0)
 
-        # Lewy sidebar (lista playlist)
-        sidebar = QWidget()
-        sidebar.setFixedWidth(240)
-        sidebar.setStyleSheet(
+        self.sidebar = QWidget()
+        self.sidebar.setFixedWidth(240)
+        self.sidebar.setStyleSheet(
             "background-color: #181818;"
             "border-right: 2px solid #383838;"
         )
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(16, 16, 16, 16)
-        sidebar_layout.setSpacing(16)
-        # TODO: Dodaj widgety playlist
-        middle_layout.addWidget(sidebar)
-
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setContentsMargins(16, 16, 16, 16)
+        self.sidebar_layout.setSpacing(16)
+        middle_layout.addWidget(self.sidebar)
 
 
         self.content = QWidget()
@@ -647,9 +702,10 @@ class BlueTrackUI(QWidget):
         self.play_stack = QStackedWidget()
         self.play_stack.setFrameShape(QFrame.NoFrame)
         self.play_stack.setStyleSheet("background: transparent; border: none;")
-        self.play_stack.addWidget(stop_container)
         self.play_stack.addWidget(start_container)
-        self.play_stack.setCurrentIndex(1)
+        self.play_stack.addWidget(stop_container)
+        
+        self.play_stack.setCurrentIndex(0)
 
         stack_size = stop_button.size()
         self.play_stack.setFixedSize(stack_size)
@@ -664,20 +720,36 @@ class BlueTrackUI(QWidget):
         controls_layout.setContentsMargins(24, 0, 24, 0)
         controls_layout.setSpacing(0)
 
-        # LEWA CZĘŚĆ - placeholder (przezroczysty, rezerwacja miejsca)
+        # LEWA CZĘŚĆ - info o aktualnie wybranym kafelku
         left = QWidget()
         left.setStyleSheet("background: transparent;")
         left_layout = QHBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
-        left.setMinimumWidth(200)  # zarezerwowane miejsce po lewej
+        left_layout.setSpacing(8)
+        left.setMinimumWidth(200)
+
+        # Miniatura koloru
+        self.song_color_preview = QLabel()
+        self.song_color_preview.setFixedSize(48, 48)
+        self.song_color_preview.setStyleSheet("background-color: transparent; border-radius: 4px;")
+
+        # Tekst utworu
+        self.song_title_label = QLabel("Wybierz utwór...")
+        self.song_title_label.setStyleSheet("color: white; font-size: 14px;")
+        self.song_title_label.setWordWrap(True)
+
+        left_layout.addWidget(self.song_color_preview, alignment=Qt.AlignVCenter)
+        left_layout.addWidget(self.song_title_label, alignment=Qt.AlignVCenter) 
+
+        
+        
 
         # ŚRODEK - przyciski (wycentrowane)
         center = QWidget()
         center.setStyleSheet("background: transparent;")
         center_layout = QHBoxLayout(center)
         center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(8)  # małe odstępy między ikonami
+        center_layout.setSpacing(8)
 
         # Dodajemy przyciski do centrum; wyrównujemy pionowo do środka
         center_layout.addWidget(previous_button, alignment=Qt.AlignVCenter)
@@ -688,10 +760,19 @@ class BlueTrackUI(QWidget):
         # PRAWA CZĘŚĆ - placeholder (przezroczysty, rezerwacja miejsca)
         right = QWidget()
         right.setStyleSheet("background: transparent;")
-        right_layout = QHBoxLayout(right)
+        right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
         right.setMinimumWidth(200)
+
+        
+        right_layout.addStretch()
+
+        # Label wyświetlający czas utworu
+        self.time_label = QLabel("0:00 / 0:00")
+        self.time_label.setStyleSheet("color: #AAAAAA; font-size: 12px;")
+        self.time_label.setAlignment(Qt.AlignRight | Qt.AlignBottom)
+        right_layout.addWidget(self.time_label)
 
         controls_layout.addWidget(left, 1, Qt.AlignVCenter | Qt.AlignLeft)
         controls_layout.addWidget(center, 0, Qt.AlignCenter)
@@ -699,10 +780,10 @@ class BlueTrackUI(QWidget):
 
         outer_layout.addWidget(controls)
 
-        stop_button.clicked.connect(lambda v: self.play_track(1))
-        start_button.clicked.connect(lambda v: self.stop_track(0))
-        #next_button.clicked.connect()
-        #previous_button.clicked.connect()
+        stop_button.clicked.connect(lambda : self.stop_track(0))
+        start_button.clicked.connect(lambda : self.play_track(1))
+        next_button.clicked.connect(self.next_track)
+        previous_button.clicked.connect(self.previous_track)
 
         
         btn_logout.clicked.connect(self.logout_user)
@@ -746,25 +827,139 @@ class BlueTrackUI(QWidget):
         # Send to server
         self.producer.send('login_user', {"username": u, "password": p})
         self.producer.flush()
-
+        print("\n", "DZIAŁA KURWAAAA")
     def play_track(self, idx):
-        
+        if not self.active_song:
+            print("Brak wybranego utworu!")
+            return
+        response = {
+            "user_id": self.user_id,
+            "track_id": self.active_song["track_id"],
+            "operation_type": "start",
+            "start_time": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": int(self.song_duration),
+            "genre": self.active_song["genre"]
+        }
+        self.producer.send("songs_tracker",response)
+        self.producer.flush()
+        print("\n WYSŁANE GOWNO")
         self.play_stack.setCurrentIndex(idx)
-        pass
+        if not self.timer.isActive():
+            self.timer.start(1000)
+            
     
 
     def stop_track(self, idx):
-
         self.play_stack.setCurrentIndex(idx)
-        pass
+        if self.timer.isActive():
+            self.timer.stop()
     
-    def next_track(self, idx):
+    def next_track(self):
+        if not self.active_song:
+            print("Brak wybranego utworu!")
+            return
+        if self.song_index == 9:
+            print("Jesteś poza zakresem")
+            return
         
-        pass
+        self.song_index = self.song_index + 1
+        tile = self.tiles[self.active_song["genre"]][self.song_index]
+        self.active_song = {
+            "genre": tile.genre,
+            "track_id": tile.track_id,
+            "title": tile.wrapped_title,
+            "duration_ms": int(tile.duration_ms) // 1000
+        }
+        self.play_stack.setCurrentIndex(0)
+        self.song_duration = self.active_song["duration_ms"]
+        if self.timer.isActive():
+            self.timer.stop()
+        self.time_left = self.song_duration
 
-    def previous_track(self, idx):
         
-        pass
+        self.song_title_label.setText(f"{tile.wrapped_title}")
+        self.song_color_preview.setStyleSheet( f"background-color: {tile.color}; border-radius: 4px;" )
+        self.time_label.setText(f"0:00 / {self.format_time(self.song_duration)}")
+
+    def previous_track(self):
+        if not self.active_song:
+            print("Brak wybranego utworu!")
+            return
+        if self.song_index == 0:
+            print("Jesteś poza zakresem")
+            return
+        
+        self.song_index = self.song_index - 1
+        tile = self.tiles[self.active_song["genre"]][self.song_index]
+        self.active_song = {
+            "genre": tile.genre,
+            "track_id": tile.track_id,
+            "title": tile.wrapped_title,
+            "duration_ms": int(tile.duration_ms) // 1000
+        }
+        self.play_stack.setCurrentIndex(0)
+        self.song_duration = self.active_song["duration_ms"]
+
+        if self.timer.isActive():
+            self.timer.stop()
+        self.time_left = self.song_duration
+
+        
+        self.song_title_label.setText(f"{tile.wrapped_title}")
+        self.song_color_preview.setStyleSheet( f"background-color: {tile.color}; border-radius: 4px;" )
+        self.time_label.setText(f"0:00 / {self.format_time(self.song_duration)}")
+    
+    def format_time(self, seconds: int) -> str:
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+    
+    def update_time(self):
+        if self.time_left > 0:
+            elapsed = self.song_duration - self.time_left
+            self.time_left -= 1
+            self.time_label.setText(
+                f"{self.format_time(elapsed)} / {self.format_time(self.song_duration)}"
+            )
+        else:
+            print("Utwór skończył się.")
+            self.time_label.setText("0:00 / 0:00")
+            self.active_song = {}
+            self.song_color_preview.setStyleSheet("background-color: transparent; border-radius: 4px;")
+            self.song_title_label.setStyleSheet("color: white; font-size: 14px;")
+            self.song_title_label.setText("Wybierz utwór...")
+            self.stop_track(0)
+
+    def handle_tile_click(self, tile):
+        
+        if self.active_song and tile.track_id == list(self.active_song.values())[0][0]:
+            print("Ten sam utwór już jest aktywny")
+            return
+        
+        
+        self.active_song = {
+            "genre": tile.genre,
+            "track_id": tile.track_id,
+            "title": tile.wrapped_title,
+            "duration_ms": int(tile.duration_ms) // 1000
+        }
+        self.song_duration = self.active_song["duration_ms"]
+        if self.timer.isActive():
+            self.timer.stop()
+        self.time_left = self.song_duration
+
+        
+        self.song_title_label.setText(f"{tile.wrapped_title}")
+        self.song_color_preview.setStyleSheet( f"background-color: {tile.color}; border-radius: 4px;" )
+        self.time_label.setText(f"0:00 / {self.format_time(self.song_duration)}")
+        self.play_stack.setCurrentIndex(0)
+        genre_tiles = self.tiles[self.active_song["genre"]]
+        self.song_index = next(
+        (i for i, tile in enumerate(genre_tiles) if tile.track_id == self.active_song["track_id"]),
+        None
+        )
+        self.last_index = len(self.tiles[self.active_song["genre"]]) - 1
+
     def logout_user(self):
         self.session_auth()
         if self.session_correct:

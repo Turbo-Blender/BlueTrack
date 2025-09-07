@@ -8,12 +8,12 @@ Instalator lub instrukcja instalacji dla większej ilości wersji i innych syste
 
 1. Pobranie oraz konfiguracja kafki
 
-    Pobrać kafkę (https://kafka.apache.org/downloads - kafka_2.13-3.4.0.tgz (Scala 2.13) z Binary downloads)
+    Pobrać kafkę (https://kafka.apache.org/downloads - kafka_2.12-3.4.0.tgz (Scala 2.12) z Binary downloads)
 
-    Do folderu C:\kafka (jeżeli nie istnieje to stworzyć) skopiować zawartość kafka_2.13-3.4.0.tgz.
-    Powino wyglądać to tak C:\kafka\kafka_2.13-3.4.0. 
+    Do folderu C:\kafka (jeżeli nie istnieje to stworzyć) skopiować zawartość kafka_2.12-3.4.0.tgz.
+    Powino wyglądać to tak C:\kafka\kafka_2.12-3.4.0. 
 
-    Następnie zmienić nazwę folderu z kafka_2.13-3.4.0 na kafka-3.4.0 (finalny wynik - C:\kafka\kafka-3.4.0)
+    Następnie zmienić nazwę folderu z kafka_2.12-3.4.0 na kafka-3.4.0 (finalny wynik - C:\kafka\kafka-3.4.0)
 
     W pliku server.properties, który znajduje się w ścieżce ../kafka-3.4.0/config/server.properties zmienić linijkę log.dirs=/tmp/kafka-logs na log.dirs=C:/kafka/kafka-3.4.0/kafka-logs
 

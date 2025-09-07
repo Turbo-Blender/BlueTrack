@@ -11,7 +11,7 @@ import random
 # https://www.kaggle.com/datasets/maharshipandya/-spotify-tracks-dataset?resource=download - spotify dataset
 
 try:
-    mongo_client = MongoClient("mongodb://mongodb:27017/")
+    mongo_client = MongoClient("mongodb://localhost:27017/")
     user_db = mongo_client["database"]
     users = user_db["users"]
     songs = user_db["songs"]
@@ -56,7 +56,7 @@ except errors.DuplicateKeyError:
 
 try:
     producer = KafkaProducer(
-        bootstrap_servers='kafka:9092',
+        bootstrap_servers='localhost:9092',
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
 except Exception as e:
@@ -64,7 +64,7 @@ except Exception as e:
 
 consumer = KafkaConsumer(
     'register_user', 'login_user', 'session_auth','songs_update',
-    bootstrap_servers='kafka:9092',
+    bootstrap_servers='localhost:9092',
     group_id='user-service',
     auto_offset_reset='latest',
     enable_auto_commit=True,
@@ -166,11 +166,10 @@ for msg in consumer:
             random_tracks = random.sample(tracks, min(len(tracks), 20))
             login_random_tracks[genre] = {"track_names": [track["track_name"] for track in random_tracks],
                                           "artists": [track["artist"] for track in random_tracks],
-                                          "tracks_id": [track["track_id"] for track in random_tracks]}
+                                          "tracks_id": [track["track_id"] for track in random_tracks],
+                                          "duration_ms":[track["duration_ms"] for track in random_tracks]}
 
         response = [login_random_tracks,sampled_20_genres]
-        
-
         
         producer.send("songs_response", response)
         producer.flush()

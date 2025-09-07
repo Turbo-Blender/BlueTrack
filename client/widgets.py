@@ -4,10 +4,6 @@ from PySide6.QtCore import *
 from colors import *
 
 def wrap_text(text, max_chars=20):
-    """
-    Dzieli tekst na linie co max_chars znaków.
-    Działa najlepiej przy spacji między słowami.
-    """
     words = text.split(' ')
     lines = []
     current_line = ''
@@ -25,12 +21,14 @@ def wrap_text(text, max_chars=20):
     return '\n'.join(lines)
 
 class BlueTrackTile(QWidget):
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title: str,track_id: str, genre: str, duration_ms: int, parent=None):
         super().__init__(parent)
-        color = random_color()
+        self.color = random_color()
         self.setObjectName("BlueTrackTile")
         self.setFixedSize(200, 250)
-
+        self.track_id = track_id
+        self.genre = genre
+        self.duration_ms = duration_ms
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -42,15 +40,15 @@ class BlueTrackTile(QWidget):
         self.color_frame.setAutoFillBackground(True)
 
         # przycisk
-        wrapped_title = wrap_text(title, max_chars=20)
-        self.button = QPushButton(wrapped_title, self)
-        self.button.setObjectName("BlueTrackTileButton")
-        self.button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.button.setMinimumHeight(0)
-        self.button.setMaximumHeight(16777215)
+        self.wrapped_title = wrap_text(title, max_chars=20)
+        self.tile_button = QPushButton(self.wrapped_title, self)
+        self.tile_button.setObjectName("BlueTrackTileButton")
+        self.tile_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.tile_button.setMinimumHeight(0)
+        self.tile_button.setMaximumHeight(16777215)
 
         layout.addWidget(self.color_frame)
-        layout.addWidget(self.button)
+        layout.addWidget(self.tile_button)
 
         # style
         self.setStyleSheet(f"""
@@ -59,7 +57,7 @@ class BlueTrackTile(QWidget):
             border-radius: 8px;
         }}
         QWidget#BlueTrackTileColor {{
-            background-color: {color};
+            background-color: {self.color};
             border-top-left-radius: 8px;
             border-top-right-radius: 8px;
         }}
@@ -75,6 +73,6 @@ class BlueTrackTile(QWidget):
             color: {PRIMARY_COLOR};
         }}
         QWidget#BlueTrackTile:hover QWidget#BlueTrackTileColor {{
-            background-color: {color.replace('#', '#80')};
+            background-color: {self.color.replace('#', '#80')};
         }}
         """)
