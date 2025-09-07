@@ -9,7 +9,7 @@ import json
 # Funkcja do aktualizacji aktywnych tracków
 # -------------------------------
 def update_active_tracks(key, events_iter, state: GroupState):
-    now = pd.Timestamp.now(tz="UTC")
+    now = (pd.Timestamp.now(tz="UTC")).to_datetime(unit="us") #timestamp
     print(f"[DEBUG] Processing user_id={key} at {now}")
 
     # stan istniejący
@@ -44,7 +44,7 @@ def update_active_tracks(key, events_iter, state: GroupState):
         print(f"[DEBUG] Removed stopped tracks: {len(stop_events)}")
 
     # filtrujemy tylko aktywne (jeszcze nie skończone)
-    all_events["end_ts"] = pd.to_datetime(all_events["end_ts"])
+    all_events["end_ts"] = pd.to_datetime(all_events["end_ts"])  #datetime64
     active = all_events[all_events["end_ts"] > now]
     print(f"[DEBUG] Active tracks after filtering: {len(active)}")
 
