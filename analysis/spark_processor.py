@@ -4,6 +4,9 @@ from pyspark.sql.types import *
 from pyspark.sql.functions import from_json, col, to_timestamp, expr
 from pyspark.sql.streaming.state import GroupState
 import json
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # -------------------------------
 # Funkcja do aktualizacji aktywnych tracków
@@ -84,8 +87,8 @@ schema_IO = StructType([
 # -------------------------------
 spark = SparkSession.builder \
     .appName("KafkaSparkStreaming") \
-    .config("spark.jars.packages",
-            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0") \
+    .master(os.getenv("SPARK_MASTER_URL", "local[*]")) \
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0") \
     .getOrCreate()
 
 print("[SPARK] Connected to Kafka.")
@@ -95,7 +98,7 @@ print("[SPARK] Connected to Kafka.")
 # -------------------------------
 df_raw = spark.readStream \
     .format("kafka") \
-    .option("kafka.bootstrap.servers", "localhost:9092") \
+    .option("kafka.bootstrap.servers", os.getenv("KAFKA_BOOTSTRAP_SERVERS")) \
     .option("subscribe", "songs_tracker") \
     .option("startingOffsets", "latest") \
     .option("kafka.group.id", "my_unique_group_id_123") \
@@ -149,7 +152,7 @@ def process_batch(batch_df, epoch_id):
 
     (result_df.write
         .format("kafka")
-        .option("kafka.bootstrap.servers", "localhost:9092")
+        .option("kafka.bootstrap.servers", os.getenv("KAFKA_BOOTSTRAP_SERVERS"))
         .option("topic", "top_genres")
         .save())
 
