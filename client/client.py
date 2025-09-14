@@ -232,7 +232,6 @@ class BlueTrackUI(QWidget):
         for genre, tracks in self.login_random_tracks.items():
             list_of_tiles = []
             for i in range(10):
-                print(tracks.keys())
                 track_name = tracks["track_names"][i]
                 artist = tracks["artists"][i]
                 message = artist + " - " + track_name
