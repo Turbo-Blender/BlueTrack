@@ -1,11 +1,12 @@
 dnspython==2.7.0
 kafka-python==2.2.15
-py4j==0.10.9.9
 pymongo==4.13.2
 PySide6
 PySide6-Addons
 PySide6-Essentials
-pyspark
+pyspark==3.5.1
 shiboken6
 bcrypt==4.3.0
 pandas
+python-dotenv
+PyArrow

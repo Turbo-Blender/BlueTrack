@@ -11,6 +11,8 @@ import os
 from datetime import datetime, timezone
 import uuid
 from functools import partial
+from dotenv import load_dotenv
+load_dotenv()
 # Switch mode:
 # 0 - login, 1 - register
 

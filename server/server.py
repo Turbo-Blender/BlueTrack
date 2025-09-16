@@ -7,11 +7,11 @@ import uuid
 import os
 import csv
 import random
-
+from dotenv import load_dotenv
 # https://www.kaggle.com/datasets/maharshipandya/-spotify-tracks-dataset?resource=download - spotify dataset
-
+load_dotenv()
 try:
-    mongo_client = MongoClient("mongodb://localhost:27017/")
+    mongo_client = MongoClient(os.getenv("MONGODB_URI"), serverSelectionTimeoutMS=5000)
     user_db = mongo_client["database"]
     users = user_db["users"]
     songs = user_db["songs"]
@@ -56,15 +56,15 @@ except errors.DuplicateKeyError:
 
 try:
     producer = KafkaProducer(
-        bootstrap_servers='localhost:9092',
+        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
 except Exception as e:
     print("Problem z połączeniem z brokerem Kafka:", e)
 
 consumer = KafkaConsumer(
-    'register_user', 'login_user', 'session_auth','songs_update',
-    bootstrap_servers='localhost:9092',
+    'register_user', 'login_user', 'session_auth','songs_update','songs_tracker',
+    bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
     group_id='user-service',
     auto_offset_reset='latest',
     enable_auto_commit=True,
