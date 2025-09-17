@@ -1,8 +1,10 @@
 import pandas as pd
 from pyspark.sql import SparkSession
-from pyspark.sql.types import *
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, IntegerType   
 from pyspark.sql.functions import from_json, col, to_timestamp, expr
-
+from dotenv import load_dotenv
+import os
+load_dotenv()
 # -------------------------------
 # Funkcja do aktualizacji aktywnych tracków
 # -------------------------------
@@ -76,8 +78,9 @@ schema_IO = StructType([
 # -------------------------------
 spark = SparkSession.builder \
     .appName("KafkaSparkStreamingTest") \
-    .config("spark.jars.packages",
-            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.6") \
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1") \
+    .config("spark.driver.extraJavaOptions", "--add-opens=java.base/sun.misc=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED") \
+    .config("spark.executor.extraJavaOptions", "--add-opens=java.base/sun.misc=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED") \
     .getOrCreate()
 
 print("[SPARK] Connected to Kafka.")
@@ -87,7 +90,7 @@ print("[SPARK] Connected to Kafka.")
 # -------------------------------
 df_raw = spark.readStream \
     .format("kafka") \
-    .option("kafka.bootstrap.servers", "127.0.0.1:9092") \
+    .option("kafka.bootstrap.servers", os.getenv("KAFKA_BOOTSTRAP_SERVERS")) \
     .option("subscribe", "songs_tracker") \
     .option("startingOffsets", "latest") \
     .option("failOnDataLoss", "false") \
@@ -136,7 +139,6 @@ def process_batch(batch_df, epoch_id):
 query = active_tracks.writeStream \
     .foreachBatch(process_batch) \
     .outputMode("update") \
-    .option("checkpointLocation", "C:/Users/mspyc/Desktop/BlueTrack/checkpoints/spark_test_console") \
     .trigger(processingTime="5 seconds") \
     .start()
 

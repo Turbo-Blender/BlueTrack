@@ -829,7 +829,7 @@ class BlueTrackUI(QWidget):
         # Send to server
         self.producer.send('login_user', {"username": u, "password": p})
         self.producer.flush()
-        print("\n", "DZIAŁA KURWAAAA")
+        print("\n", "Dane wysłane")
     def play_track(self, idx):
         if not self.active_song:
             print("Brak wybranego utworu!")
@@ -844,7 +844,7 @@ class BlueTrackUI(QWidget):
         }
         self.producer.send("songs_tracker",response)
         self.producer.flush()
-        print("\n WYSŁANE GOWNO")
+        print("\n Wysłano do songs_tracker: \n", response)
         self.play_stack.setCurrentIndex(idx)
         if not self.timer.isActive():
             self.timer.start(1000)
